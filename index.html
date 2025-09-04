@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>四轴无人机飞行游戏</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #aeeaff; }
+    #ui {
+      position: absolute; left: 10px; top: 10px; color: #fff; font-size: 18px;
+      text-shadow: 1px 1px 4px #000;
+      z-index: 10;
+    }
+    #weatherBtn {
+      position: absolute; right: 20px; top: 20px; z-index: 10;
+      font-size: 16px; padding: 8px 16px; border-radius: 6px; border: none;
+      background: #4a90e2; color: #fff; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div id="speed">速度: 0</div>
+    <div id="weather">天气: 晴天</div>
+  </div>
+  <button id="weatherBtn">切换天气 (T)</button>
+  <div id="instructions" style="position: absolute; bottom: 20px; left: 20px; color: white; text-shadow: 1px 1px 2px black;">
+    WASD/方向键: 飞行控制 | Q/E: 滚转 | 鼠标: 射击 | 空格: 投炸弹 | T: 切换天气
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "paper-plane-game",
+  "version": "1.0.0",
+  "description": "3D Paper Plane Flight Combat Game",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8000",
+    "build": "echo 'No build process needed for static site'"
+  },
+  "keywords": ["game", "3d", "threejs", "flight", "combat"],
+  "author": "Your Name",
+  "license": "MIT"
+}
