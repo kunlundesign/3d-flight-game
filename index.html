@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <title>四轴无人机飞行游戏</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #aeeaff; }
+    body { margin: 0; overflow: hidden; background: #aeeaff; font-family: Arial, sans-serif; }
     #ui {
       position: absolute; left: 10px; top: 10px; color: #fff; font-size: 18px;
       text-shadow: 1px 1px 4px #000;
@@ -15,6 +15,182 @@
       font-size: 16px; padding: 8px 16px; border-radius: 6px; border: none;
       background: #4a90e2; color: #fff; cursor: pointer;
     }
+    #aircraftBtn {
+      position: absolute; right: 140px; top: 20px; z-index: 10;
+      font-size: 16px; padding: 8px 16px; border-radius: 6px; border: none;
+      background: #e74c3c; color: #fff; cursor: pointer;
+    }
+    
+    /* 飞机切换弹窗样式 */
+    #aircraftModal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    #aircraftPanel {
+      background: linear-gradient(135deg, #2c3e50, #3498db);
+      border-radius: 15px;
+      padding: 30px;
+      max-width: 600px;
+      width: 90%;
+      color: white;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal-header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 15px;
+    }
+    
+    .aircraft-section {
+      margin-bottom: 25px;
+    }
+    
+    .aircraft-section h3 {
+      margin-bottom: 15px;
+      color: #ecf0f1;
+      font-size: 18px;
+    }
+    
+    .preset-aircraft {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    
+    .aircraft-option {
+      background: rgba(255, 255, 255, 0.1);
+      border: 2px solid transparent;
+      border-radius: 10px;
+      padding: 15px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+    
+    .aircraft-option:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: #3498db;
+      transform: translateY(-2px);
+    }
+    
+    .aircraft-option.selected {
+      border-color: #e74c3c;
+      background: rgba(231, 76, 60, 0.2);
+    }
+    
+    .aircraft-icon {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    
+    .aircraft-name {
+      font-size: 14px;
+      font-weight: bold;
+    }
+    
+    .upload-section {
+      border: 2px dashed #3498db;
+      border-radius: 10px;
+      padding: 30px;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.05);
+      transition: all 0.3s ease;
+    }
+    
+    .upload-section:hover {
+      border-color: #e74c3c;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .upload-section.dragover {
+      border-color: #2ecc71;
+      background: rgba(46, 204, 113, 0.1);
+    }
+    
+    #fileInput {
+      display: none;
+    }
+    
+    .upload-btn {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 10px;
+      transition: background 0.3s ease;
+    }
+    
+    .upload-btn:hover {
+      background: #2980b9;
+    }
+    
+    .modal-buttons {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-top: 30px;
+    }
+    
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      transition: all 0.3s ease;
+    }
+    
+    .btn-primary {
+      background: #2ecc71;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #27ae60;
+    }
+    
+    .btn-secondary {
+      background: #95a5a6;
+      color: white;
+    }
+    
+    .btn-secondary:hover {
+      background: #7f8c8d;
+    }
+    
+    .loading {
+      display: none;
+      text-align: center;
+      margin-top: 20px;
+    }
+    
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3498db;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
@@ -23,10 +199,70 @@
     <div id="weather">天气: 晴天</div>
   </div>
   <button id="weatherBtn">切换天气 (T)</button>
-  <div id="instructions" style="position: absolute; bottom: 20px; left: 20px; color: white; text-shadow: 1px 1px 2px black;">
-    WASD/方向键: 飞行控制 | Q/E: 滚转 | 鼠标: 射击 | 空格: 投炸弹 | T: 切换天气
+  <button id="aircraftBtn">切换飞机 (C)</button>
+  
+  <!-- 飞机切换弹窗 -->
+  <div id="aircraftModal">
+    <div id="aircraftPanel">
+      <div class="modal-header">
+        <h2>🛩️ 选择飞行器</h2>
+      </div>
+      
+      <div class="aircraft-section">
+        <h3>预设飞行器</h3>
+        <div class="preset-aircraft">
+          <div class="aircraft-option selected" data-aircraft="default">
+            <div class="aircraft-icon">✈️</div>
+            <div class="aircraft-name">经典战机</div>
+          </div>
+          <div class="aircraft-option" data-aircraft="fighter">
+            <div class="aircraft-icon">🚁</div>
+            <div class="aircraft-name">战斗机</div>
+          </div>
+          <div class="aircraft-option" data-aircraft="stealth">
+            <div class="aircraft-icon">🛸</div>
+            <div class="aircraft-name">隐形机</div>
+          </div>
+          <div class="aircraft-option" data-aircraft="bomber">
+            <div class="aircraft-icon">🚂</div>
+            <div class="aircraft-name">轰炸机</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="aircraft-section">
+        <h3>上传自定义模型</h3>
+        <div class="upload-section" id="uploadArea">
+          <div>📁 拖拽GLB文件到此处，或点击下方按钮选择文件</div>
+          <div style="font-size: 12px; color: #bdc3c7; margin: 10px 0;">
+            支持格式: .glb, .gltf (建议文件大小 < 5MB)
+          </div>
+          <input type="file" id="fileInput" accept=".glb,.gltf">
+          <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+            选择文件
+          </button>
+          <div id="fileName" style="margin-top: 10px; color: #2ecc71;"></div>
+        </div>
+        
+        <div class="loading" id="loadingIndicator">
+          <div class="spinner"></div>
+          <div>正在加载模型...</div>
+        </div>
+      </div>
+      
+      <div class="modal-buttons">
+        <button class="btn btn-primary" id="applyAircraft">应用更改</button>
+        <button class="btn btn-secondary" id="cancelAircraft">取消</button>
+      </div>
+    </div>
   </div>
+  
+  <div id="instructions" style="position: absolute; bottom: 20px; left: 20px; color: white; text-shadow: 1px 1px 2px black;">
+    WASD/方向键: 飞行控制 | Q/E: 滚转 | 鼠标: 射击 | 空格: 投炸弹 | T: 切换天气 | C: 切换飞机
+  </div>
+  
   <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

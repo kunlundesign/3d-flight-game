@@ -15,6 +15,32 @@ let targets = []; // 存储地面目标
 let score = 0; // 分数
 let tanksDestroyed = 0; // 摧毁的坦克数量
 
+// 飞机切换相关变量
+let gltfLoader; // GLTF模型加载器
+let currentAircraftType = 'default'; // 当前飞机类型
+let selectedAircraftType = 'default'; // 选中的飞机类型
+let customModel = null; // 自定义模型
+
+// 预设飞机配置
+const aircraftConfigs = {
+  default: {
+    name: '经典战机',
+    createFunction: () => createPaperPlane()
+  },
+  fighter: {
+    name: '战斗机',
+    createFunction: () => createFighterJet()
+  },
+  stealth: {
+    name: '隐形机',
+    createFunction: () => createStealthFighter()
+  },
+  bomber: {
+    name: '轰炸机',
+    createFunction: () => createBomber()
+  }
+};
+
 // 等待Three.js加载完成
 window.addEventListener('load', function() {
   if (typeof THREE !== 'undefined') {
@@ -54,6 +80,13 @@ function init() {
   renderer.physicallyCorrectLights = true;
   document.body.appendChild(renderer.domElement);
 
+  // 初始化GLTF加载器
+  if (typeof THREE.GLTFLoader !== 'undefined') {
+    gltfLoader = new THREE.GLTFLoader();
+  } else {
+    console.warn('GLTFLoader not loaded, custom model upload will be disabled');
+  }
+
   // 创建地形
   createTerrain();
   
@@ -71,6 +104,9 @@ function init() {
 
   // 事件监听
   setupEventListeners();
+  
+  // 设置飞机切换功能
+  setupAircraftSwitchListeners();
   
   clock = new THREE.Clock();
   
@@ -935,6 +971,10 @@ function setupEventListeners() {
   window.addEventListener('keydown', (e) => {
     keys[e.key.toLowerCase()] = true;
     if (e.key.toLowerCase() === 't') toggleWeather();
+    if (e.key.toLowerCase() === 'c') { // 添加飞机切换快捷键
+      const aircraftBtn = document.getElementById('aircraftBtn');
+      if (aircraftBtn) aircraftBtn.click();
+    }
     if (e.key === ' ') { // 空格键投弹
       e.preventDefault(); // 防止页面滚动
       dropBomb();
@@ -1495,3 +1535,408 @@ function onWindowResize() {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
+
+// 设置飞机切换相关的事件监听器
+function setupAircraftSwitchListeners() {
+  const aircraftBtn = document.getElementById('aircraftBtn');
+  const aircraftModal = document.getElementById('aircraftModal');
+  const applyBtn = document.getElementById('applyAircraft');
+  const cancelBtn = document.getElementById('cancelAircraft');
+  const fileInput = document.getElementById('fileInput');
+  const uploadArea = document.getElementById('uploadArea');
+  const fileName = document.getElementById('fileName');
+  const loadingIndicator = document.getElementById('loadingIndicator');
+  
+  if (!aircraftBtn || !aircraftModal) {
+    console.warn('Aircraft switch UI elements not found');
+    return;
+  }
+  
+  // 打开飞机切换弹窗
+  aircraftBtn.addEventListener('click', () => {
+    aircraftModal.style.display = 'flex';
+    selectedAircraftType = currentAircraftType;
+    updateAircraftSelection();
+  });
+  
+  // 关闭弹窗
+  cancelBtn.addEventListener('click', () => {
+    aircraftModal.style.display = 'none';
+    selectedAircraftType = currentAircraftType;
+    updateAircraftSelection();
+    fileName.textContent = '';
+    customModel = null;
+  });
+  
+  // 点击弹窗外部关闭
+  aircraftModal.addEventListener('click', (e) => {
+    if (e.target === aircraftModal) {
+      cancelBtn.click();
+    }
+  });
+  
+  // 预设飞机选择
+  const aircraftOptions = document.querySelectorAll('.aircraft-option');
+  aircraftOptions.forEach(option => {
+    option.addEventListener('click', () => {
+      selectedAircraftType = option.dataset.aircraft;
+      customModel = null;
+      fileName.textContent = '';
+      updateAircraftSelection();
+    });
+  });
+  
+  // 文件上传处理
+  if (fileInput) {
+    fileInput.addEventListener('change', handleFileUpload);
+  }
+  
+  // 拖拽上传
+  if (uploadArea) {
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      const files = e.dataTransfer.files;
+      if (files.length > 0 && fileInput) {
+        fileInput.files = files;
+        handleFileUpload({ target: { files } });
+      }
+    });
+  }
+  
+  // 应用更改
+  if (applyBtn) {
+    applyBtn.addEventListener('click', () => {
+      applyAircraftChange();
+      aircraftModal.style.display = 'none';
+    });
+  }
+}
+
+// 更新飞机选择显示
+function updateAircraftSelection() {
+  const aircraftOptions = document.querySelectorAll('.aircraft-option');
+  aircraftOptions.forEach(option => {
+    if (option.dataset.aircraft === selectedAircraftType) {
+      option.classList.add('selected');
+    } else {
+      option.classList.remove('selected');
+    }
+  });
+}
+
+// 处理文件上传
+function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  if (!gltfLoader) {
+    alert('GLTFLoader未加载，无法上传自定义模型');
+    return;
+  }
+  
+  const fileName = document.getElementById('fileName');
+  const loadingIndicator = document.getElementById('loadingIndicator');
+  
+  // 检查文件类型
+  const validTypes = ['.glb', '.gltf'];
+  const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+  
+  if (!validTypes.includes(fileExtension)) {
+    alert('请选择有效的GLB或GLTF文件！');
+    return;
+  }
+  
+  // 检查文件大小 (5MB限制)
+  if (file.size > 5 * 1024 * 1024) {
+    alert('文件太大！请选择小于5MB的文件。');
+    return;
+  }
+  
+  if (fileName) fileName.textContent = `已选择: ${file.name}`;
+  if (loadingIndicator) loadingIndicator.style.display = 'block';
+  
+  // 创建文件URL
+  const fileURL = URL.createObjectURL(file);
+  
+  // 加载模型
+  gltfLoader.load(
+    fileURL,
+    (gltf) => {
+      customModel = gltf.scene;
+      selectedAircraftType = 'custom';
+      
+      // 标准化模型
+      normalizeCustomModel(customModel);
+      
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (fileName) fileName.innerHTML = `✅ ${file.name} (已加载)`;
+      
+      // 更新选择状态
+      document.querySelectorAll('.aircraft-option').forEach(option => {
+        option.classList.remove('selected');
+      });
+      
+      URL.revokeObjectURL(fileURL);
+    },
+    (progress) => {
+      console.log('加载进度:', (progress.loaded / progress.total * 100) + '%');
+    },
+    (error) => {
+      console.error('模型加载失败:', error);
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (fileName) fileName.textContent = '❌ 加载失败，请重试';
+      alert('模型加载失败，请检查文件格式！');
+      URL.revokeObjectURL(fileURL);
+    }
+  );
+}
+
+// 标准化自定义模型
+function normalizeCustomModel(model) {
+  // 计算模型边界盒
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  
+  // 将模型移到原点
+  model.position.sub(center);
+  
+  // 缩放到合适大小 (目标大小约为6个单位)
+  const maxDimension = Math.max(size.x, size.y, size.z);
+  const scale = 6 / maxDimension;
+  model.scale.setScalar(scale);
+  
+  // 确保模型面向正确方向 (Z轴正方向为前进方向)
+  model.rotation.set(0, 0, 0);
+  
+  // 启用阴影
+  model.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+}
+
+// 应用飞机更改
+function applyAircraftChange() {
+  // 保存当前位置和旋转
+  const currentPosition = glider.position.clone();
+  const currentRotation = glider.rotation.clone();
+  const currentVelocity = velocity.clone();
+  
+  // 移除当前飞机
+  scene.remove(glider);
+  
+  // 创建新飞机
+  if (selectedAircraftType === 'custom' && customModel) {
+    glider = customModel.clone();
+    glider.userData.propeller = null; // 自定义模型可能没有螺旋桨
+    glider.userData.leftGunPosition = new THREE.Vector3(-1, 0, 1);
+    glider.userData.rightGunPosition = new THREE.Vector3(1, 0, 1);
+  } else if (aircraftConfigs[selectedAircraftType]) {
+    aircraftConfigs[selectedAircraftType].createFunction();
+  } else {
+    createPaperPlane(); // 默认飞机
+  }
+  
+  // 恢复位置和状态
+  glider.position.copy(currentPosition);
+  glider.rotation.copy(currentRotation);
+  velocity.copy(currentVelocity);
+  
+  // 添加到场景
+  scene.add(glider);
+  
+  // 更新当前飞机类型
+  currentAircraftType = selectedAircraftType;
+  
+  console.log('飞机已切换为:', aircraftConfigs[currentAircraftType]?.name || '自定义模型');
+}
+
+// 创建战斗机
+function createFighterJet() {
+  glider = new THREE.Group();
+  
+  // 使用更现代的材质
+  const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0x404040, flatShading: true });
+  const wingMaterial = new THREE.MeshLambertMaterial({ color: 0x606060, flatShading: true });
+  const detailMaterial = new THREE.MeshLambertMaterial({ color: 0x202020, flatShading: true });
+  
+  // 机身 - 更尖锐的设计
+  const bodyGeometry = new THREE.ConeGeometry(0.4, 4, 8);
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.rotation.x = Math.PI / 2;
+  body.position.set(0, 0, 0);
+  body.castShadow = true;
+  glider.add(body);
+  
+  // 驾驶舱
+  const cockpitGeometry = new THREE.SphereGeometry(0.35, 8, 8);
+  const cockpit = new THREE.Mesh(cockpitGeometry, new THREE.MeshLambertMaterial({ 
+    color: 0x1a1a1a, 
+    transparent: true, 
+    opacity: 0.8 
+  }));
+  cockpit.position.set(0, 0.2, 1.2);
+  cockpit.scale.set(1, 0.6, 1.2);
+  glider.add(cockpit);
+  
+  // 机翼 - 后掠翼设计
+  const wingGeometry = new THREE.BoxGeometry(6, 0.15, 1.5);
+  const wings = new THREE.Mesh(wingGeometry, wingMaterial);
+  wings.position.set(0, -0.1, 0);
+  wings.rotation.z = Math.PI * 0.1; // 后掠角
+  wings.castShadow = true;
+  glider.add(wings);
+  
+  // 垂直尾翼
+  const tailGeometry = new THREE.BoxGeometry(0.2, 1.5, 0.8);
+  const tail = new THREE.Mesh(tailGeometry, wingMaterial);
+  tail.position.set(0, 0.5, -1.8);
+  glider.add(tail);
+  
+  // 引擎喷嘴
+  const engineGeometry = new THREE.CylinderGeometry(0.2, 0.3, 0.8, 8);
+  const engine = new THREE.Mesh(engineGeometry, detailMaterial);
+  engine.rotation.x = Math.PI / 2;
+  engine.position.set(0, 0, -2.2);
+  glider.add(engine);
+  
+  // 导弹挂点
+  for (let i = -1; i <= 1; i += 2) {
+    const missileGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.8, 8);
+    const missile = new THREE.Mesh(missileGeometry, new THREE.MeshLambertMaterial({ color: 0x8B0000 }));
+    missile.rotation.x = Math.PI / 2;
+    missile.position.set(i * 2, -0.3, 0.5);
+    glider.add(missile);
+  }
+  
+  // 设置机炮位置
+  glider.userData.leftGunPosition = new THREE.Vector3(-2, -0.2, 1);
+  glider.userData.rightGunPosition = new THREE.Vector3(2, -0.2, 1);
+}
+
+// 创建隐形战机
+function createStealthFighter() {
+  glider = new THREE.Group();
+  
+  const stealthMaterial = new THREE.MeshLambertMaterial({ color: 0x2a2a2a, flatShading: true });
+  const detailMaterial = new THREE.MeshLambertMaterial({ color: 0x1a1a1a, flatShading: true });
+  
+  // 隐形机特征的钻石形机身
+  const bodyGeometry = new THREE.ConeGeometry(0.5, 4.5, 4);
+  const body = new THREE.Mesh(bodyGeometry, stealthMaterial);
+  body.rotation.x = Math.PI / 2;
+  body.rotation.z = Math.PI / 4; // 45度旋转创建钻石形状
+  body.castShadow = true;
+  glider.add(body);
+  
+  // 棱角分明的机翼
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(-4, 0);
+  wingShape.lineTo(-1, 1.5);
+  wingShape.lineTo(1, 1.5);
+  wingShape.lineTo(4, 0);
+  wingShape.lineTo(1, -0.5);
+  wingShape.lineTo(-1, -0.5);
+  
+  const wingGeometry = new THREE.ExtrudeGeometry(wingShape, { depth: 0.1, bevelEnabled: false });
+  const wings = new THREE.Mesh(wingGeometry, stealthMaterial);
+  wings.rotation.x = -Math.PI / 2;
+  wings.position.set(0, -0.05, 0);
+  wings.castShadow = true;
+  glider.add(wings);
+  
+  // V形尾翼
+  for (let i = -1; i <= 1; i += 2) {
+    const vTailGeometry = new THREE.BoxGeometry(0.8, 0.1, 1.2);
+    const vTail = new THREE.Mesh(vTailGeometry, stealthMaterial);
+    vTail.position.set(i * 0.3, 0.6, -1.5);
+    vTail.rotation.z = i * Math.PI / 6;
+    glider.add(vTail);
+  }
+  
+  // 内置武器舱
+  const weaponBayGeometry = new THREE.BoxGeometry(0.8, 0.05, 1.0);
+  const weaponBay = new THREE.Mesh(weaponBayGeometry, detailMaterial);
+  weaponBay.position.set(0, -0.3, 0);
+  glider.add(weaponBay);
+  
+  // 设置机炮位置
+  glider.userData.leftGunPosition = new THREE.Vector3(-0.4, -0.3, 1);
+  glider.userData.rightGunPosition = new THREE.Vector3(0.4, -0.3, 1);
+}
+
+// 创建轰炸机
+function createBomber() {
+  glider = new THREE.Group();
+  
+  const bomberMaterial = new THREE.MeshLambertMaterial({ color: 0x4a4a4a, flatShading: true });
+  const wingMaterial = new THREE.MeshLambertMaterial({ color: 0x5a5a5a, flatShading: true });
+  
+  // 粗壮的机身
+  const bodyGeometry = new THREE.CylinderGeometry(0.6, 0.4, 5, 12);
+  const body = new THREE.Mesh(bodyGeometry, bomberMaterial);
+  body.rotation.x = Math.PI / 2;
+  body.castShadow = true;
+  glider.add(body);
+  
+  // 大型机翼
+  const wingGeometry = new THREE.BoxGeometry(10, 0.3, 2.5);
+  const wings = new THREE.Mesh(wingGeometry, wingMaterial);
+  wings.position.set(0, -0.2, 0.5);
+  wings.castShadow = true;
+  glider.add(wings);
+  
+  // 四个引擎
+  for (let i = -1; i <= 1; i += 2) {
+    for (let j = 0; j < 2; j++) {
+      const engineGeometry = new THREE.CylinderGeometry(0.25, 0.3, 1.2, 8);
+      const engine = new THREE.Mesh(engineGeometry, new THREE.MeshLambertMaterial({ color: 0x303030 }));
+      engine.rotation.x = Math.PI / 2;
+      engine.position.set(i * (1.5 + j * 1.5), -0.4, 0.3);
+      glider.add(engine);
+    }
+  }
+  
+  // 尾翼
+  const tailGeometry = new THREE.BoxGeometry(0.3, 2, 1.5);
+  const tail = new THREE.Mesh(tailGeometry, wingMaterial);
+  tail.position.set(0, 0.8, -2.2);
+  glider.add(tail);
+  
+  // 炸弹舱
+  const bombBayGeometry = new THREE.BoxGeometry(1.5, 0.1, 3);
+  const bombBay = new THREE.Mesh(bombBayGeometry, new THREE.MeshLambertMaterial({ color: 0x2a2a2a }));
+  bombBay.position.set(0, -0.7, 0);
+  glider.add(bombBay);
+  
+  // 多个炸弹
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      const bombGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8);
+      const bomb = new THREE.Mesh(bombGeometry, new THREE.MeshLambertMaterial({ color: 0x8B0000 }));
+      bomb.position.set(i * 0.4, -0.9, j * 0.8);
+      glider.add(bomb);
+    }
+  }
+  
+  // 设置机炮位置
+  glider.userData.leftGunPosition = new THREE.Vector3(-3, 0, 1);
+  glider.userData.rightGunPosition = new THREE.Vector3(3, 0, 1);
+}
+
+// 启动游戏
+init();
+animate();
